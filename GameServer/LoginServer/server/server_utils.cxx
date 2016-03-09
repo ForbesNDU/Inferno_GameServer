@@ -7,6 +7,12 @@ void* get_in_addr(struct sockaddr *sa) {
         return &(((struct sockaddr_in6*)sa)->sin6_addr);
 }
 
+std::string hash_SHA_256( std::string input ) {
+
+	
+
+}
+
 std::string timestamp() {
 
         time_t current_time;

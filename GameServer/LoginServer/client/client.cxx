@@ -1,4 +1,5 @@
 #include <arpa/inet.h>
+#include <boost/lexical_cast.hpp>
 #include <cstring>
 #include <errno.h>
 #include <iostream>
@@ -11,6 +12,10 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+#include <openssl/ssl.h>
+#include <openssl/err.h>
+
+char server_addr[INET6_ADDRSTRLEN];
 
 ////////// DEFINITIONS //////////
 
@@ -21,6 +26,8 @@
 #define MTU (512)
 
 void* get_in_addr(struct sockaddr*);
+bool ssl_initialize();
+SSL_CTX* fetch_ssl_context();
 
 bool login(int);
 bool signup(int);
@@ -74,10 +81,9 @@ int main(int argc, char **argv) {
 		return EXIT_FAILURE;
 	}
 
-	char s[INET6_ADDRSTRLEN];
-	inet_ntop(i->ai_family, get_in_addr((struct sockaddr*)i->ai_addr), s, sizeof(s));
+	inet_ntop(i->ai_family, get_in_addr((struct sockaddr*)i->ai_addr), server_addr, sizeof(server_addr));
 
-	printf("Connected to server at: %s\n", s);
+	printf("Connected to server at: %s\n", server_addr);
 
 	freeaddrinfo(serverinfo);
 
@@ -231,11 +237,87 @@ bool signup(int sock) {
                 return false;
         }
 
-	// 
+	// Receive port number 
+	short ssl_port;
+	int bytes_received = recv(sock, &ssl_port, sizeof(ssl_port), 0);
+	if(bytes_received <= 0) {
+		std::cout << "Failed to receive port number for ssl connection" << std::endl;
+		return false;
+	}
+
+        bytes_received = recv(sock, &ssl_port, sizeof(ssl_port), 0);
+        if(bytes_received <= 0) {
+                std::cout << "Failed to receive port number for ssl connection" << std::endl;
+                return false;
+        }
+
+	std::string addr =  "Toaster.dhcp.nd.edu:" + boost::lexical_cast<std::string>(ntohs(ssl_port));
+	std::cout << "Secure addr: " << addr << std::endl;	
+
+	// Prepare SSL connection
+	if(!ssl_initialize()) {
+		return false;
+	} 
+
+	SSL_CTX* ctx = fetch_ssl_context();
+	
+	std::cout << (char*)addr.c_str() << std::endl;
+	BIO* dispatcher = BIO_new_connect((char*)addr.c_str());
+	if(!dispatcher) {
+		std::cout << "Unable to create connection (SSL)" << std::endl;
+		return false;
+	}
+
+	if(BIO_do_connect(dispatcher) <= 0) {
+		std::cout << "Unable to connect to server (SSL)" << std::endl;
+		return false;
+	}
+
+	SSL* ssl = SSL_new(ctx);
+	if(!ssl) {
+		std::cout << "Unable to create context (SSL)" << std::endl;
+		return false;
+	}	
+
+	SSL_set_bio(ssl, dispatcher, dispatcher);
+
+	if(SSL_connect(ssl) <= 0) {
+		std::cout << "Unable to bind socket to SSL" << std::endl;
+		return false;
+	}
+
+	// Send password length folowed by password over SSL
+	char* char_pass = (char*)password.c_str();
+	short length = htons(strlen(char_pass));
+
+	std::cout << "Password: " << char_pass << std::endl;
+
+	SSL_write(ssl, &length, sizeof(short));
+	SSL_write(ssl, char_pass, strlen(char_pass));
+
+	// Receive ACK
+	
+	short ACK;
+	recv(sock, &ACK, sizeof(short), 0);
+	if(ntohs(ACK) == 0) {
+		std::cout << "Successfully registered" << std::endl;
+	} else {
+		std::cout << "An error occurred during the registration process" << std::endl;
+		return false;
+	}
+	
+	// Shutdown
+	SSL_shutdown(ssl);
+	SSL_free(ssl);
+	SSL_CTX_free(ctx);
+	
+	return true;
 	
 }
 
 bool change_password(int sock) {
+
+	return true;
 
 }
 
@@ -248,6 +330,53 @@ void* get_in_addr(struct sockaddr *sa) {
 	return &(((struct sockaddr_in6*)sa)->sin6_addr);
 
 }
+
+bool ssl_initialize() {
+
+	if(!SSL_library_init()) {
+		std::cout << "Unable to initilize OpenSSL" << std::endl;
+		return false;
+	}
+	SSL_load_error_strings();
+
+	return true;
+
+}
+
+SSL_CTX* fetch_ssl_context() {
+
+	SSL_CTX* ctx;
+	ctx = SSL_CTX_new(TLSv1_client_method());
+	if(!ctx) {
+		std::cout << "Unable to create context (SSL)" << std::endl;
+		return NULL;
+	}
+
+	if(SSL_CTX_set_cipher_list(ctx, "ADH-AES256-SHA") != 1) {
+		std::cout << "Unable to set cipher list (SSL)" << std::endl;
+		return NULL;
+	}
+
+	return ctx;
+
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

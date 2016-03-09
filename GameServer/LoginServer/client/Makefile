@@ -24,4 +24,4 @@ client.o : client.cxx
 
 
 clean:
-	rm *.o launcher
+	rm *.o client

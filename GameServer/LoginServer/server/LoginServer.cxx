@@ -463,21 +463,31 @@ bool LoginServer::signup_user(int data_conn) {
 	if(!recv_password(data_conn, password)) {
 		return false;
 	}
-	/*
-	// Add database entry
-	sql::PreparedStatement *ps;
 	
-	ps = con->prepareStatement("INSERT INTO credentials(username, password_hash) VALUES(?, ?)");	
-	ps->setString(1, uname_buffer);
-	ps->setString(2, password);
-	ps->execute();
-
-	delete ps;
+	// Add database entry
+	short db_result_code;
+	
+	try {
+		sql::PreparedStatement *ps;
+	
+		ps = con->prepareStatement("INSERT INTO credentials(username, password_hash) VALUES(?, ?)");	
+		ps->setString(1, uname_buffer);
+		ps->setString(2, password);
+		ps->execute();
+	
+		delete ps;
+			
+		db_result_code = 0;
+	} 
+	catch (sql::SQLException &e) {
+		db_result_code = 1;
+		fprintf(logfile, "%s MySQL exception: %s\n", (timestamp()).c_str(), e.what());
+	}
 
 	// Acknowledge success	
-	short success = htons(0);
+	short success = htons(db_result_code);
 	send(data_conn, &success, sizeof(short), 0);
-	*/
+	
 	return true;
 
 }
@@ -511,11 +521,8 @@ bool LoginServer::recv_password(int data_conn, char* password) {
 		return false;
 	}
 
-	std::cout << "Selected port: " << ntohs(ssl_port) << std::endl;
-
 	// Assign port
 	addr = "*:" + addr;
-	std::cout << addr << std::endl;
 
 	BIO *acceptor = BIO_new_accept((char*)addr.c_str());
 	if(!acceptor) {
@@ -551,14 +558,20 @@ bool LoginServer::recv_password(int data_conn, char* password) {
 		return false;
 	}
 
+	// Receive password length
+	short pass_len;
+	SSL_read(ssl, &pass_len, sizeof(short));
+	pass_len = ntohs(pass_len);
+
 	// Receive password (needs timeout/ async)
 	char buffer[64];
 	memset(buffer, 0, sizeof(buffer));
 
 	int total_bytes = 0;
 	int bytes_read;
-	while(bytes_read = SSL_read(ssl, buffer + total_bytes, sizeof(buffer))) {
-		
+	while(total_bytes < pass_len) {
+		bytes_read = SSL_read(ssl, buffer + total_bytes, sizeof(buffer));
+		total_bytes += bytes_read;
 	}
 
 	memcpy(password, buffer, sizeof(buffer));
