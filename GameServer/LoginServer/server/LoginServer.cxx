@@ -36,9 +36,26 @@ LoginServer::LoginServer(uint16_t requested_port) {
 	std::cout << "Attempting to start user services. Please enter credentials: ";
 	std::cin >> password;
 	con = driver->connect("tcp://127.0.0.1:3306", "root", password);
-
-	// Connect to users database
 	con->setSchema("USERDB");
+
+	// UDP socket to chat server 
+        const char* hostname = "Toaster.dhcp.nd.edu";
+        const char* port = "8000";
+        bool result = setup_UDP_connection(hostname, port, &chat_sock, &chat_addr, &chat_addrlen);
+        if(!result) {
+                std::cout << "Failed to initialize chat server connection" << std::endl;
+        }
+
+	// UDP socket to match server
+        port = "30000";
+        result = setup_UDP_connection(hostname, port, &match_sock, &match_addr, &match_addrlen);
+        if(!result) {
+        	std::cout << "Failed to initialize match server connection" << std::endl;      
+        }
+
+	// Set socks non-blocking
+        fcntl(chat_sock, F_SETFL, O_NONBLOCK);
+        fcntl(match_sock, F_SETFL, O_NONBLOCK);
 
 }
 
@@ -485,14 +502,117 @@ bool LoginServer::login_user(int data_conn) {
 //////// LOCAL AUTHENTICATION ////////
 
 
-bool LoginServer::chat_server_auth(char* auth_token) {
+bool LoginServer::chat_server_auth(char* auth_token, char* username) {
 
-	
+	// Build string
+	char contents[85];
+	memset(contents, 0, strlen(contents));
+
+	strcpy(contents, auth_token);
+	strcat(contents, username);
+
+	// Send out auth string
+	int bytes = sendto(chat_sock, contents, strlen(contents), 0, &chat_addr, chat_addrlen);
+	if(bytes <= 0) {
+		fprintf(logfile, "%s Failed to send auth token to chat server", (timestamp()).c_str());
+		return false;
+	}
+
+	// Try to receive ACK
+	int tries = 0;
+	int elapsed_time = 0;
+	short val;
+
+	struct timeval t0, t1;
+	gettimeofday(&t0, 0);
+
+	while(1) {
+
+		bytes = recvfrom(chat_sock, &val, sizeof(short), 0, &chat_addr, &chat_addrlen);
+		if(bytes > 0) {
+			break;
+		}
+
+		gettimeofday(&t1, 0);
+		elapsed_time = ((t1.tv_sec - t0.tv_sec) * 1000000) + (t1.tv_usec - t0.tv_usec);
+
+		if(elapsed_time > 500000) {
+			tries += 1;
+			bytes = sendto(chat_sock, contents, strlen(contents), 0, &chat_addr, chat_addrlen);
+        	
+			if(bytes <= 0) {
+        		        fprintf(logfile, "%s Failed to send auth token to chat server", (timestamp()).c_str());
+        		        return false;
+		        }
+		
+			gettimeofday(&t0, 0);
+		}
+
+		if(tries > 10) {
+			fprintf(logfile, "%s Unable to send auth token to chat server for user: %s ", (timestamp()).c_str(), username);
+			return false;
+		}
+
+	} 
+
+	return true;
 
 }
 
-bool LoginServer::match_server_auth(char* auth_token) {
+bool LoginServer::match_server_auth(char* auth_token, char* username) {
 
+        // Build string
+        char contents[85];
+        memset(contents, 0, strlen(contents));
+
+        strcpy(contents, auth_token);
+        strcat(contents, username);
+
+        // Send out auth string
+        int bytes = sendto(match_sock, contents, strlen(contents), 0, &match_addr, match_addrlen);
+        if(bytes <= 0) {
+                fprintf(logfile, "%s Failed to send auth token to chat server", (timestamp()).c_str());
+                return false;
+        }
+
+        // Try to receive ACK
+        int tries = 0;
+        int elapsed_time = 0;
+        short val;
+
+        struct timeval t0, t1;
+        gettimeofday(&t0, 0);
+          
+        while(1) {
+
+                bytes = recvfrom(match_sock, &val, sizeof(short), 0, &match_addr, &match_addrlen);
+                if(bytes > 0) {
+                        break;
+                }
+
+                gettimeofday(&t1, 0);
+                elapsed_time = ((t1.tv_sec - t0.tv_sec) * 1000000) + (t1.tv_usec - t0.tv_usec);
+
+                if(elapsed_time > 500000) {
+                        tries += 1;
+                        bytes = sendto(match_sock, contents, strlen(contents), 0, &match_addr, match_addrlen);
+                        
+                        if(bytes <= 0) {
+                                fprintf(logfile, "%s Failed to send auth token to chat server", (timestamp()).c_str());
+                                return false;
+                        }
+
+                        gettimeofday(&t0, 0);
+                }
+
+                if(tries > 10) {
+                        fprintf(logfile, "%s Unable to send auth token to chat server for user: %s ", (timestamp()).c_str(), username);
+                        return false;
+                }
+
+        }
+
+        return true;
 
 
 } 

@@ -7,6 +7,7 @@
 #include <cstring>
 #include <ctime>
 #include <errno.h>
+#include <fcntl.h>
 #include <iostream>
 #include <mutex>
 #include <netdb.h>
@@ -57,8 +58,8 @@ class LoginServer {
 
 		// Login service routines
 		bool login_user(int);
-		bool chat_server_auth();
-		bool match_server_auth();
+		bool chat_server_auth(char*, char*);
+		bool match_server_auth(char*, char*);
 	
 		// Sign up service routines
 		bool signup_user(int);		
@@ -80,7 +81,13 @@ class LoginServer {
 
 		static int instance;
 		FILE* logfile;
+
+		// Server Connectivity
 		int sock;
+		int chat_sock, match_sock;
+		struct sockaddr chat_addr, match_addr;
+		socklen_t chat_addrlen, match_addrlen;
+
 
 		std::mutex registration_port_mutex;
 		std::mutex login_port_mutex;

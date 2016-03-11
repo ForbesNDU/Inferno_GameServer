@@ -9,6 +9,7 @@
 #include <openssl/sha.h>
 #include <sstream>
 #include <string>
+#include <string.h>
 #include <sys/socket.h>
 
 // Utility for getting IP as string
@@ -18,7 +19,7 @@ void* get_in_addr( struct sockaddr* );
 std::string hash_SHA_256( std::string );
 
 // Setup a UDP socket locally
-bool setup_UDP_connection(const char*, const char*);
+bool setup_UDP_connection(const char*, const char*, int*, struct sockaddr*, socklen_t*);
 
 // Creates a timestamp for log files
 std::string timestamp();
