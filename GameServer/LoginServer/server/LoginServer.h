@@ -57,9 +57,8 @@ class LoginServer {
 
 		// Login service routines
 		bool login_user(int);
-		bool recv_username(int);
-		bool send_random(int);
-		bool validate_response(int);
+		bool chat_server_auth();
+		bool match_server_auth();
 	
 		// Sign up service routines
 		bool signup_user(int);		
@@ -74,14 +73,17 @@ class LoginServer {
 
 		// Internal server data
 		const char* port;
-		int next_available_port;
+		int next_registration_port;
+		int next_login_port;	
+
 		std::string SERVTAG;
 
 		static int instance;
 		FILE* logfile;
 		int sock;
 
-		std::mutex port_mutex;
+		std::mutex registration_port_mutex;
+		std::mutex login_port_mutex;
 
 		// MySQL Utilities
 		sql::mysql::MySQL_Driver *driver;

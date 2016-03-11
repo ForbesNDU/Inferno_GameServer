@@ -27,7 +27,7 @@ LoginServer.o : LoginServer.cxx LoginServer.h server_utils.h
 	$(CC) $(EXTRA_FLAGS) -c LoginServer.cxx $(LIBS) $(CRYPTO_FLAGS) $(MYSQL_FLAGS) -o LoginServer.o
 
 server_utils.o : server_utils.cxx server_utils.h
-	$(CC) $(EXTRA_FLAGS) -c server_utils.cxx -o server_utils.o
+	$(CC) $(EXTRA_FLAGS) -c server_utils.cxx $(LIBS) $(CRYPTO_FLAGS) -o server_utils.o
 
 ######## ADDITIONAL RULES ########
 

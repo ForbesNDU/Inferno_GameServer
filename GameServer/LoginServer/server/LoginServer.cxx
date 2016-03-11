@@ -11,7 +11,8 @@ LoginServer::LoginServer(uint16_t requested_port) {
 	// Get port
 	std::string port_string = boost::lexical_cast<std::string>( (int)requested_port );
 	port = port_string.c_str();
-	next_available_port = 13000;
+	next_registration_port = 13000;
+	next_login_port = 14000;
 
 	// Init debug string
 	instance++;
@@ -255,32 +256,26 @@ bool LoginServer::start() {
 		// Child block
 		if(!fork()) {
 
-			bool didLogin = false;
-	
-			while(!didLogin) {			
+			close(sock);
 
-				close(sock);
-	
-				RAND_poll();
-	
-				int req_type = get_request_type(data_conn);
-				if(req_type == 0) { 
-					didLogin = login_user(data_conn);
-				}
-				else if(req_type == 1) {
-					signup_user(data_conn);
-				}
-				else if(req_type == -1) {
-					std::cout << SERVTAG << "An internal error occurred while processing the user's request" << std::endl;
-					break;
-				}
-				else {
-					std::cout << SERVTAG << "User issued invalid request code: " << req_type << std::endl;
-				}
+			RAND_poll();
 
+			int req_type = get_request_type(data_conn);
+			if(req_type == 0) { 
+				login_user(data_conn);
+			}
+			else if(req_type == 1) {
+				signup_user(data_conn);
+			}
+			else if(req_type == -1) {
+				std::cout << SERVTAG << "An internal error occurred while processing the user's request" << std::endl;
+				break;
+			}
+			else {
+				std::cout << SERVTAG << "User issued invalid request code: " << req_type << std::endl;
 			}
 
-			std::cout << "Closed auth session with " << client_addr_str << std::endl;
+			std::cout << "Closed session with: " << client_addr_str << std::endl;
 
 			close(data_conn);
 			exit(0);
@@ -289,13 +284,14 @@ bool LoginServer::start() {
 		
 	}
 
+	return true;
+
 }
 
 
-//////// SERVICE IMPLEMENTATIONS ////////
+//////// SERVICE HANDLER ////////
 
 
-// Service Request Handler //
 int LoginServer::get_request_type(int data_conn) {
 
 	short request_code;
@@ -325,101 +321,186 @@ int LoginServer::get_request_type(int data_conn) {
 
 }
 
-// Login Service //
+
+//////// LOGIN HANDLER ////////
+
+
 bool LoginServer::login_user(int data_conn) {
-	if(!recv_username(data_conn)) {
-		return false;
-	}
 
-	if(!send_random(data_conn)) {
-		return false;
-	}
+        SSL_CTX* ctx = fetch_ssl_context();
 
-	if(!validate_response(data_conn)) {
-		return false;
-	}
+        // Get first free port and update
+        // LOCK //
+        login_port_mutex.lock();
+        // LOCK //
 
-	return true;
-}
+        std::string addr = boost::lexical_cast<std::string>(next_login_port);
 
-bool LoginServer::recv_username(int data_conn) {
+        next_login_port += 1;
+        if(next_login_port <= 14000) {
+                next_login_port = 13000;
+        }
 
-	// Receive length of username
-	short namelen;
-	int bytes_received = recv(data_conn, &namelen, sizeof(short), 0);
-	namelen = ntohs(namelen);
+        // UNLOCK //
+        login_port_mutex.unlock();
+        // UNLOCK //
 
-	// Receive username
-	bytes_received = 0;
-	char uname_buffer[MAXUNAMELEN];
-	memset(uname_buffer, 0, MAXUNAMELEN * sizeof(char));
+        // Send port number to client
+        short ssl_port = (short)std::stoi(addr);
+        ssl_port = htons(ssl_port);
+        int bytes = send(data_conn, & ssl_port, sizeof(short), 0);
+        if(bytes < 0) {
+                fprintf(logfile, "%s Unable to send selected secure port to client\n", (timestamp()).c_str());
+                return false;
+        }
 
-	while(bytes_received < namelen) {		
-		bytes_received += recv(data_conn, uname_buffer, sizeof(uname_buffer), 0);
-	}	
+        // Assign port
+        addr = "*:" + addr;
 
-	std::cout << uname_buffer << std::endl;
+        BIO *acceptor = BIO_new_accept((char*)addr.c_str());
+        if(!acceptor) {
+                fprintf(logfile, "%s Unable to create secure socket\n", (timestamp()).c_str());
+                return false;
+        }
 
-	// Lookup username in database
-	sql::ResultSet *res;
-	sql::Statement *statement = con->createStatement();
-	res = statement->executeQuery("SELECT username, password_hash FROM credentials ORDER BY username ASC");
+        // Create accept socket
+        if(BIO_do_accept(acceptor) <= 0) {
+                fprintf(logfile, "%s Unable to listen on secure socket\n", (timestamp()).c_str());
+                return false;
+        }
 
-	short success;
-	if(!res->next()) {
+	// Listen on accept socket
+        if(BIO_do_accept(acceptor) <= 0) {
+                fprintf(logfile, "%s Unable to listen on secure socket\n", (timestamp()).c_str());
+                return false;
+        }
+
+        BIO *client = BIO_pop(acceptor);
+
+        SSL* ssl = SSL_new(ctx);
+        if(!ssl) {
+                fprintf(logfile, "%s Unable to create ssl context\n", (timestamp()).c_str());
+                return false;
+        }
+
+        // Set non-blocking and notify client that server is ready for connect
+        SSL_set_bio(ssl, client, client);
+
+        if(SSL_accept(ssl) <= 0) {
+                fprintf(logfile, "Error occured setting up SSL connection\n");
+                return false;
+        }
+
+        // Receive length of username
+        short namelen;
+        int bytes_received = SSL_read(ssl, &namelen, sizeof(short));
+        namelen = ntohs(namelen);
+
+        // Receive username
+        bytes_received = 0;
+        char uname_buffer[MAXUNAMELEN];
+        memset(uname_buffer, 0, MAXUNAMELEN * sizeof(char));
+
+        while(bytes_received < namelen) {
+                bytes_received += SSL_read(ssl, uname_buffer, sizeof(uname_buffer));
+        }
+
+        // Lookup username in database
+        std::string query = "SELECT username, password_hash FROM credentials WHERE username='" + boost::lexical_cast<std::string>(uname_buffer) + "'";
+        sql::ResultSet *res;
+        sql::Statement *statement = con->createStatement();
+        res = statement->executeQuery( query );
+
+        short success;
+	std::string stored_hash;
+        if(!res->next()) {
+                success = htons(1);
+                std::cout << "Username not found." << std::endl;
+                send(data_conn, &success, sizeof(short), 0);
+                return false;
+        } else {
+                success = htons(0);
+                send(data_conn, &success, sizeof(short), 0);
+ 		stored_hash = res->getString("password_hash");
+        }
+
+	std::cout << "Stored Hash: " << stored_hash << std::endl;
+
+        // Receive password length
+        short pass_len;
+        SSL_read(ssl, &pass_len, sizeof(short));
+        pass_len = ntohs(pass_len);
+
+        // Receive password (needs timeout/ async)
+        char buffer[64];
+        memset(buffer, 0, sizeof(buffer));
+
+        int total_bytes = 0;
+        int bytes_read;
+        while(total_bytes < pass_len) {
+                bytes_read = SSL_read(ssl, buffer + total_bytes, sizeof(buffer));
+                total_bytes += bytes_read;
+        }
+
+	// Hash password and compare
+	std::string password = boost::lexical_cast<std::string>(buffer);
+	std::string client_hash = hash_SHA_256(password);		
+
+	std::cout << "Client Hash: " << client_hash << std::endl;
+
+	if( client_hash.compare(stored_hash) != 0 ) {
 		success = htons(1);
-		std::cout << "Username not found." << std::endl;
-		send(data_conn, &success, sizeof(short), 0);
-		return false;	
+                std::cout << "Incorrect password" << std::endl;
+                send(data_conn, &success, sizeof(short), 0);
+                return false;
 	} else {
 		success = htons(0);
-		send(data_conn, &success, sizeof(short), 0);
-		return true;		
+                send(data_conn, &success, sizeof(short), 0);
 	}
 
-}
-
-bool LoginServer::send_random(int data_conn) {
-
-	// Get cryptographically strong random string
-	short codelen = 256;
-	unsigned char auth_code[codelen];
-	memset(auth_code, 0, sizeof(auth_code));
-	bool success = rng_get_AES_str(auth_code, codelen);	
-
-	if(!success) {
+	// Upon success, send auth string to client 
+	unsigned char randstr[256];
+	bool result = rng_get_AES_str(randstr, 256);
+	if(!result) {
 		return false;
 	} 
 
-	// Send size of string to client
-	codelen = htons(codelen);
-	std::cout << codelen << std::endl;
-	int bytes_sent = send(data_conn, &codelen, sizeof(short), 0);
-	if(bytes_sent == -1) {
-		std::cout << "Unable to send auth code length to client" << std::endl;
-		return false;
-	}
+	std::string token = hash_SHA_256( boost::lexical_cast<std::string>(randstr) );
+	SSL_write(ssl, token.c_str(), strlen(token.c_str()));
 
-	// Send string to client
-	bytes_sent = send(data_conn, auth_code, sizeof(auth_code), 0);
-	if(bytes_sent == -1) {
-		std::cout << "Unable to send auth code to client" << std::endl;
-		return false;	
-	}
+	std::cout << "Auth token: " << token << std::endl;
 
-	std::cout << "Auth code: "<< auth_code << std::endl;
+        // Cleanup
+        SSL_shutdown(ssl);
+        SSL_free(ssl);
+        SSL_CTX_free(ctx);
+        BIO_free(acceptor);
+
+        return true;
+
+
+}
+
+
+//////// LOCAL AUTHENTICATION ////////
+
+
+bool LoginServer::chat_server_auth(char* auth_token) {
+
 	
-	return true;
 
 }
 
-bool LoginServer::validate_response(int data_conn) {
+bool LoginServer::match_server_auth(char* auth_token) {
 
-	return true;
 
-}
 
-// Signup Service //
+} 
+
+
+//////// SIGNUP HANDLER ////////
+
+
 bool LoginServer::signup_user(int data_conn) {
 
         // Receive length of username
@@ -464,6 +545,9 @@ bool LoginServer::signup_user(int data_conn) {
 		return false;
 	}
 	
+	// Hash password
+	std::string hash = hash_SHA_256( boost::lexical_cast<std::string>(password) );
+	
 	// Add database entry
 	short db_result_code;
 	
@@ -472,7 +556,7 @@ bool LoginServer::signup_user(int data_conn) {
 	
 		ps = con->prepareStatement("INSERT INTO credentials(username, password_hash) VALUES(?, ?)");	
 		ps->setString(1, uname_buffer);
-		ps->setString(2, password);
+		ps->setString(2, hash);
 		ps->execute();
 	
 		delete ps;
@@ -498,18 +582,18 @@ bool LoginServer::recv_password(int data_conn, char* password) {
 	
 	// Get first free port and update
 	// LOCK //
-	port_mutex.lock();	
+	registration_port_mutex.lock();	
 	// LOCK //
 
-	std::string addr = boost::lexical_cast<std::string>(next_available_port);
+	std::string addr = boost::lexical_cast<std::string>(next_registration_port);
 
-	next_available_port += 1;
-	if(next_available_port <= 20000) {
-		next_available_port = 13000;
+	next_registration_port += 1;
+	if(next_registration_port <= 14000) {
+		next_registration_port = 13000;
 	}
 
 	// UNLOCK //
-	port_mutex.unlock();
+	registration_port_mutex.unlock();
 	// UNLOCK //
 
 	// Send port number to client
@@ -588,7 +672,9 @@ bool LoginServer::recv_password(int data_conn, char* password) {
 
 }
 
+
 //////// ADDITIONAL UTILITIES ////////
+
 
 void LoginServer::log_connection_error(struct sockaddr_storage* client_info) {
 	struct sockaddr *address = (struct sockaddr*)client_info;
@@ -605,7 +691,6 @@ void LoginServer::log_connection_error(struct sockaddr_storage* client_info) {
 		return;
 	}
 
-	// get & log address
 }
 
 void handle_sigchild(int s) {

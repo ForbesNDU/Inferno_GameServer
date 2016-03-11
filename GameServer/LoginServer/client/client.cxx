@@ -120,7 +120,6 @@ int main(int argc, char **argv) {
 
 ////////// IMPLEMENTATION DETAILS //////////
 
-
 bool login(int sock) {
 
         // Get login info
@@ -134,66 +133,133 @@ bool login(int sock) {
         std::cout << "Password: ";
         std::cin >> password;
 
-	// Send code
-	short service_code = 0;
-	service_code = htons(service_code);
-	int bytes_sent = send(sock, &service_code, sizeof(short), 0);
-	if(bytes_sent < 0) {
-		std::cout << "Unable to send service code to server: " << strerror(errno) << std::endl;
-		return false;
-	}
+        // Send code
+        short service_code = 0;
+        service_code = htons(service_code);
+        int bytes_sent = send(sock, &service_code, sizeof(short), 0);
+        if(bytes_sent < 0) {
+                std::cout << "Unable to send service code to server: " << strerror(errno) << std::endl;
+                return false;
+        }
 
-	// Send username length
-	short usernamelen = username.length();
-	usernamelen = htons(usernamelen);
-	bytes_sent = send(sock, &usernamelen, sizeof(short), 0);
+        // Receive port number 
+        short ssl_port;
+        int bytes_received = recv(sock, &ssl_port, sizeof(ssl_port), 0);
+        if(bytes_received <= 0) {
+                std::cout << "Failed to receive port number for ssl connection" << std::endl;
+                return false;
+        }
+
+        bytes_received = recv(sock, &ssl_port, sizeof(ssl_port), 0);
+        if(bytes_received <= 0) {
+                std::cout << "Failed to receive port number for ssl connection" << std::endl;
+                return false;
+        }
+
+        std::string addr =  "Toaster.dhcp.nd.edu:" + boost::lexical_cast<std::string>(ntohs(ssl_port));
+        std::cout << "Secure addr: " << addr << std::endl;
+
+        // Prepare SSL connection
+        if(!ssl_initialize()) {
+                return false;
+        }
+
+        SSL_CTX* ctx = fetch_ssl_context();
+
+        std::cout << (char*)addr.c_str() << std::endl;
+        BIO* dispatcher = BIO_new_connect((char*)addr.c_str());
+        if(!dispatcher) {
+                std::cout << "Unable to create connection (SSL)" << std::endl;
+                return false;
+        }
+
+        if(BIO_do_connect(dispatcher) <= 0) {
+                std::cout << "Unable to connect to server (SSL)" << std::endl;
+                return false;
+        }
+
+        SSL* ssl = SSL_new(ctx);
+        if(!ssl) {
+                std::cout << "Unable to create context (SSL)" << std::endl;
+                return false;
+        }
+
+        SSL_set_bio(ssl, dispatcher, dispatcher);
+
+        if(SSL_connect(ssl) <= 0) {
+                std::cout << "Unable to bind socket to SSL" << std::endl;
+                return false;
+        }
+
+        // Send username length
+        short usernamelen = username.length();
+        usernamelen = htons(usernamelen);
+        bytes_sent = SSL_write(ssl, &usernamelen, sizeof(short));
         if(bytes_sent < 0) {
                 std::cout << "Unable to send username length to server: " << strerror(errno) << std::endl;
                 return false;
         }
 
-	// Send username
-	char uname[MAXNAMELEN];
-	memset(uname, 0, MAXNAMELEN * sizeof(char));
-	sprintf(uname, "%s", username.c_str());
-	uname[strlen(uname)] = '\0';
+        // Send username
+        char uname[MAXNAMELEN];
+        memset(uname, 0, MAXNAMELEN * sizeof(char));
+        sprintf(uname, "%s", username.c_str());
+        uname[strlen(uname)] = '\0';
+        
+        bytes_sent = SSL_write(ssl, uname, sizeof(uname));
+        if(bytes_sent < 0) {
+                std::cout << "Unable to send username to server: " << strerror(errno) << std::endl;
+                return false;
+        }       
+
+	// Receive ACK
+        short ACK;
+        recv(sock, &ACK, sizeof(short), 0);
+        if(ntohs(ACK) != 0) {
+                std::cout << "An error occurred during the registration process" << std::endl;
+                return false;
+        }
+
+	// Send password length followed by password over SSL
+        char* char_pass = (char*)password.c_str();
+        short length = htons(strlen(char_pass));
+
+        std::cout << "Password: " << char_pass << std::endl;
+
+        SSL_write(ssl, &length, sizeof(short));
+        SSL_write(ssl, char_pass, strlen(char_pass));
+
+        // Receive ACK
+
+        recv(sock, &ACK, sizeof(short), 0);
+        if(ntohs(ACK) != 0) {
+                std::cout << "An error occurred during the registration process" << std::endl;
+                return false;
+        }
+
+	// Receive auth token
+	char buffer[64];
+        memset(buffer, 0, sizeof(buffer));
+
+        int total_bytes = 0;
+        int bytes_read;
+        while(total_bytes < 64) {
+                bytes_read = SSL_read(ssl, buffer + total_bytes, sizeof(buffer));
+                total_bytes += bytes_read;
+        }
 	
-	bytes_sent = send(sock, uname, sizeof(uname), 0);
-	if(bytes_sent < 0) {
-		std::cout << "Unable to send username to server: " << strerror(errno) << std::endl;
-		return false;
-	}	
+	std::cout << "Auth token: " << buffer << std::endl;
 
-	// Receive length of random string
-        /*short authlen;
-        int bytes_received = recv(sock, &authlen, sizeof(short), 0);
-	//authlen = ntohs(authlen);
+        // Shutdown
+        SSL_shutdown(ssl);
+        SSL_free(ssl);
+        SSL_CTX_free(ctx);
 
-	// Receive random string
-	char auth_str[authlen];
-	std::cout << authlen << std::endl;
-	memset(auth_str, 0, authlen * sizeof(char));
+        return true;
 
-	bytes_received = 0;
-	int block = 0;
-
-	while(bytes_received < authlen) {
-
-		block = recv(sock, &auth_str, sizeof(auth_str), 0);
-		if(block < 0) {
-			std::cout << "Error occurred when receiving rand string from server" << std::endl;
-			return false;
-		}
-		bytes_received += block;
-
-	}		
-
-	std::cout << "Random string: " << auth_str << std::endl; 
-	*/
-	return true;
-	
 }
 
+// Signup Utility // 
 bool signup(int sock) {
 
         // Get login info

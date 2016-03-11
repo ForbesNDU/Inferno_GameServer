@@ -12,7 +12,7 @@
 #include <unistd.h>
 
 void* get_in_addr(struct sockaddr*);
-bool setup_TCP_connection(const char*, const char*);
+bool setup_TCP_connection(const char*, const char*, int*);
 std::string timestamp();
 
 #endif
