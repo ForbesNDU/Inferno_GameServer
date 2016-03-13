@@ -6,9 +6,12 @@
 #include <boost/lockfree/spsc_queue.hpp>
 #include "Client.h"
 #include <deque>
+#include <fcntl.h>
 #include <map>
 #include <netdb.h>
+#include "net_defs.h"
 #include <netinet/in.h>
+#include "serialization.h"
 #include <thread>
 #include "server_utils.h"
 #include <sys/socket.h>

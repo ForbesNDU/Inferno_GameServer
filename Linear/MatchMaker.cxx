@@ -38,10 +38,7 @@ void MatchMaker::update_tokens() {
 
 void MatchMaker::get_requests() {
 
-	int bytes;
-	char buffer[128];
-
-	while(bytes = recvfrom(request_sock, ))	
+	
 
 }
 

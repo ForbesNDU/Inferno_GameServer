@@ -33,7 +33,7 @@ LoginServer.o : LoginServer.cxx LoginServer.h server_utils.h
 ChatServer.o : ChatServer.cxx ChatServer.h Client.h Session.h server_utils.h
 	$(CC) $(EXTRA_FLAGS) -c ChatServer.cxx $(LIBS) -o ChatServer.o
 
-MatchMaker.o : MatchMaker.cxx MatchMaker.h server_utils.h
+MatchMaker.o : MatchMaker.cxx MatchMaker.h net_defs.h serialization.h server_utils.h
 	$(CC) $(EXTRA_FLAGS) -c MatchMaker.cxx $(LIBS) -o MatchMaker.o
 
 Session.o : Session.cxx Session.h Client.h server_utils.h
@@ -46,8 +46,14 @@ Client.o : Client.cxx Client.h
 ######## FUNCTION LIBRARY BUILD RULES
 
 
+serialization.o : serialization.cxx serialization.h net_defs.h
+	$(CC) $(EXTRA_FLAGS) -c serialization.cxx $(LIBS) -o serialization.o
+
 server_utils.o : server_utils.cxx server_utils.h
 	$(CC) $(EXTRA_FLAGS) -c server_utils.cxx $(LIBS) $(CRYPTO_FLAGS) -o server_utils.o
+
+net_defs.o : net_defs.cxx net_defs.h
+	$(CC) $(EXTRA_FLAGS) -c net_defs.cxx $(LIBS) -o net_defs.o 
 
 
 ######## ADDITIONAL RULES ########
