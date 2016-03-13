@@ -5,7 +5,15 @@
 
 
 MatchMaker::MatchMaker() {
-	toKill = false;
+
+        // Open MatchMaker request server and set nonblocking
+        bool result = setup_UDP_server_connection(MATCHPORT, &request_sock);
+        if(!result) {
+                return;
+        }
+
+        fcntl(request_sock, F_SETFL, O_NONBLOCK);
+
 }
 
 MatchMaker::~MatchMaker() {
@@ -19,12 +27,21 @@ MatchMaker::~MatchMaker() {
 //////// PUBLIC METHODS ////////
 
 
-void MatchMaker::update() {
+void MatchMaker::update_tokens() {
 
         while(1) {
                 receive_new();
                 scrub_list();
         }
+
+}
+
+void MatchMaker::get_requests() {
+
+	int bytes;
+	char buffer[128];
+
+	while(bytes = recvfrom(request_sock, ))	
 
 }
 

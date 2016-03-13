@@ -7,6 +7,26 @@ void* get_in_addr(struct sockaddr *sa) {
         return &(((struct sockaddr_in6*)sa)->sin6_addr);
 }
 
+std::string hash_SHA_256( std::string input ) {
+
+        unsigned char hash[SHA256_DIGEST_LENGTH];
+        SHA256_CTX ctx;
+        SHA256_Init(&ctx);
+        SHA256_Update(&ctx, input.c_str(), input.size());
+        SHA256_Final(hash, &ctx);
+
+        std::stringstream ss;
+
+        int i;
+        for(i = 0; i < SHA256_DIGEST_LENGTH; i++) {
+                ss << std::hex << std::setw(2) << std::setfill('0') << (int)hash[i];
+        }
+
+        return ss.str();
+
+}
+
+
 bool setup_TCP_connection(const char* hostname, const char* port, int *conn) {
 
         // Get server addressing info
@@ -62,7 +82,7 @@ bool setup_TCP_connection(const char* hostname, const char* port, int *conn) {
 
 }
 
-bool setup_UDP_connection(const char* hostname, const char* port, int* sock, struct sockaddr *addr, socklen_t* len) {
+bool setup_UDP_client_connection(const char* hostname, const char* port, int* sock, struct sockaddr *addr, socklen_t* len) {
 
         struct addrinfo hints;
         memset(&hints, 0, sizeof(hints));
@@ -99,6 +119,49 @@ bool setup_UDP_connection(const char* hostname, const char* port, int* sock, str
 
 }
 
+bool setup_UDP_server_connection(const char* port, int* sock) {
+
+        struct addrinfo hints;
+        memset(&hints, 0, sizeof(hints));
+        hints.ai_family = AF_UNSPEC;
+        hints.ai_socktype = SOCK_DGRAM;
+	hints.ai_flags = AI_PASSIVE;
+
+        struct addrinfo *server_info;
+        int errval = getaddrinfo(NULL, port, &hints, &server_info);
+        if( errval != 0 ) {
+                freeaddrinfo(server_info);
+                return false;
+        }
+
+        struct addrinfo *i;
+        for(i = server_info; i != NULL; i = i->ai_next) {
+
+                *sock = socket(i->ai_family, i->ai_socktype, i->ai_protocol);
+                if(*sock == -1) {
+                        continue;
+                }
+
+		errval = bind(*sock, i->ai_addr, i->ai_addrlen);
+		if(errval == -1) {
+			close(*sock);
+			freeaddrinfo(server_info);
+			continue;
+		}
+
+                break;
+
+        }
+
+        if(i == NULL) {
+                freeaddrinfo(server_info);
+                return false;
+        }
+
+	freeaddrinfo(server_info);
+	return true;
+
+}
 
 std::string timestamp() {
 
@@ -115,3 +178,12 @@ std::string timestamp() {
         return str;
 
 }
+
+
+
+
+
+
+
+
+
