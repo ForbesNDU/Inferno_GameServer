@@ -1,20 +1,23 @@
 #ifndef I_OBJECTIVE_PACKET_H
 #define I_OBJECTIVE_PACKET_H
 
-#include "Packet.h"
+#include "Sync_Packet.h"
 
 struct objective_update {
-	uint16_t objective_id;
+	uint16_t id;
 	uint16_t health;
-	uint16_t target_id;
-	uint8_t is_active;
+	uint16_t max_health;
+	uint32_t x;
+	uint32_t y;
+	uint32_t z;
+	uint16_t auto_target;
 };
 
-class I_Objective_Packet : public I_Objective_Packet {
+class I_Objective_Packet : public Sync_Packet {
 	public:
-		I_Objective_Packet(struct packet_header*, struct objective_update*);		
+		I_Objective_Packet(struct packet_header*, struct sync_header*, struct objective_update*);		
 
-                void serialize(unsigned char*, size_t*) const;
+                void serialize(unsigned char*) const;
                 static void deserialize(unsigned char*, struct objective_update*);
 
                 static size_t get_packet_size();

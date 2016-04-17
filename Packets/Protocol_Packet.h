@@ -3,26 +3,28 @@
 
 #include "Packet.h"
 
-typedef protocol_op enum : uint8_t {
+typedef enum protocol_op : uint8_t {
 	PING,
 	SYN
 } protocol_op;
 
 struct protocol_header {
-	protocol_op op
+	protocol_op op;
 };
 
 class Protocol_Packet : public Packet {
 	public:
-		Protocol_Packet();
+		Protocol_Packet(struct packet_header*, struct protocol_header*);
 
-                virtual void serialize(unsigned char*, size_t*) const = 0;
-                static void deserialize(unsigned char**, struct packet_header*);
+                virtual void serialize(unsigned char*) const = 0;
+                static void deserialize(unsigned char**, struct protocol_header*);
 
-	private:
+	protected:
 		// Utilities for subclasses to add general protocol packet header
                 void add_header(unsigned char*) const;
+		static size_t get_header_size();
 
+	private:
                 // General header contents
                 const struct protocol_header pr_header;
                 

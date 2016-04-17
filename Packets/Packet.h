@@ -24,13 +24,15 @@ class Packet {
 	public:
 		Packet(struct packet_header*);
 
-		virtual void serialize(unsigned char*, size_t*) const = 0;
+		virtual void serialize(unsigned char*) const = 0;
 		static void deserialize(unsigned char**, struct packet_header*);
 
 	protected:
 		// Utilities for subclasses to add general packet header
 		void add_header(unsigned char*) const;
+		static size_t get_header_size();
 
+	private:
 		// General header contents
 		const struct packet_header header;
 

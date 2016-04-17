@@ -27,3 +27,7 @@ void Packet::add_header(unsigned char* tail) const {
 
 }
 
+
+size_t Packet::get_header_size() {
+	return 13;
+}

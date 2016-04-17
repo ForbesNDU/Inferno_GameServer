@@ -1,17 +1,17 @@
 #ifndef G_AUTO_REQUEST_PACKET_H
 #define G_AUTO_REQUEST_PACKET_H
 
-#include "Packet.h"
+#include "Event_Packet.h"
 
 struct auto_request {
 	uint16_t target;
 };
 
-class G_Auto_Request_Packet : public Packet {
+class G_Auto_Request_Packet : public Event_Packet {
 	public:
-		G_Auto_Request_Packet(struct packet_header*, struct auto_request*);
+		G_Auto_Request_Packet(struct packet_header*, struct event_header*, struct auto_request*);
 
-	        void serialize(unsigned char*, size_t*) const;
+	        void serialize(unsigned char*) const;
                 static void deserialize(unsigned char*, struct auto_request*);
 
                 static size_t get_packet_size();	

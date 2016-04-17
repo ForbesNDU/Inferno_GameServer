@@ -3,7 +3,7 @@
 
 #include "Packet.h"
 
-typedef sync_type enum : uint8_t {
+typedef enum sync_type : uint8_t {
 	LASTHIT_UPDATE,
 	OBJECTIVE_UPDATE,
 	LOCAL_PLAYER_UPDATE,
@@ -19,8 +19,8 @@ class Sync_Packet : public Packet {
 	public:
 		Sync_Packet(struct packet_header*, struct sync_header*);
 
-                virtual void serialize(unsigned char*, size_t*) const = 0;
-                static void deserialize(unsigned char**, struct packet_header*);
+                virtual void serialize(unsigned char*) const = 0;
+                static void deserialize(unsigned char**, struct sync_header*);
 
 	protected:
                 // Utilities for subclasses to add general sync packet header
